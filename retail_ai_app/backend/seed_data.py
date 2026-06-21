@@ -20,14 +20,14 @@ def hash_password(pwd: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 OWNERS = [
-    {"name": "A. Sharma", "email": "sharma@demo.com", "password": "sharma123"},
-    {"name": "S. Mukherjee", "email": "mukherjee@demo.com", "password": "mukh123"},
+    {"name": "A. Sharma", "email": "sharma@abc.com", "password": "sharma123"},
+    {"name": "S. Mukherjee", "email": "mukherjee@xyz.com", "password": "mukh123"},
 ]
 
 STORES = [
-    {"name": "ABC Store", "store_type": "general", "owner_email": "sharma@demo.com"},
-    {"name": "XYZ Electronics", "store_type": "electronics", "owner_email": "mukherjee@demo.com"},
-    {"name": "MNO Motors", "store_type": "automotive", "owner_email": "sharma@demo.com"},
+    {"name": "ABC Store", "store_type": "general", "owner_email": "sharma@abc.com"},
+    {"name": "XYZ Electronics", "store_type": "electronics", "owner_email": "mukherjee@xyz.com"},
+    {"name": "MNO Motors", "store_type": "automotive", "owner_email": "sharma@abc.com"},
 ]
 
 ABC_PRODUCTS = [

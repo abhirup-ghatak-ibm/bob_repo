@@ -9,9 +9,9 @@ Runs entirely **offline on a single machine** — no cloud, no external APIs.
 
 | Store Name       | Type         | Owner               | Email                  |
 |------------------|--------------|---------------------|------------------------|
-| ABC Store        | General      | Mr. A. Sharma       | sharma@demo.com        |
-| MNO Motors       | Automotive   | Mr. A. Sharma       | sharma@demo.com        |
-| XYZ Electronics  | Electronics  | Mrs. S. Mukherjee   | mukherjee@demo.com     |
+| ABC Store        | General      | Mr. A. Sharma       | sharma@abc.com         |
+| MNO Motors       | Automotive   | Mr. A. Sharma       | sharma@abc.com         |
+| XYZ Electronics  | Electronics  | Mrs. S. Mukherjee   | mukherjee@xyz.com      |
 
 ---
 
@@ -19,8 +19,8 @@ Runs entirely **offline on a single machine** — no cloud, no external APIs.
 
 | Owner              | Email                   | Password   | Stores Accessible                |
 |--------------------|-------------------------|------------|----------------------------------|
-| Mr. A. Sharma      | sharma@demo.com         | sharma123  | ABC Store, MNO Motors            |
-| Mrs. S. Mukherjee  | mukherjee@demo.com      | mukh123    | XYZ Electronics                  |
+| Mr. A. Sharma      | sharma@abc.com          | sharma123  | ABC Store, MNO Motors            |
+| Mrs. S. Mukherjee  | mukherjee@xyz.com       | mukh123    | XYZ Electronics                  |
 
 ---
 
@@ -101,8 +101,9 @@ retail_ai_app/
             ├── AuthPages.js     ← Login + Register
             ├── DashboardPage.js ← Charts + KPIs
             ├── InventoryPage.js ← Inventory health table
-            ├── InsightsPage.js  ← Per-store AI insights
-            └── AllRecsPage.js   ← Combined owner recommendations
+            ├── AllRecsPage.js   ← AI Insights (combined, with store filter)
+            ├── SettingsPage.js  ← Stores, products, Excel upload
+            └── ContactPage.js   ← Contact RetailAI support
 ```
 
 ---
@@ -111,15 +112,15 @@ retail_ai_app/
 
 **For Mr. A. Sharma (owns ABC Store + MNO Motors):**
 
-1. Log in with `sharma@demo.com` / `sharma123`
+1. Log in with `sharma@abc.com` / `sharma123`
 2. The sidebar shows a **store selector dropdown** listing both stores
 3. Select either **ABC Store** or **MNO Motors** to switch context
-4. All pages (Dashboard, Inventory, Insights) update for the selected store
-5. Navigate to **All Recs** to see combined AI recommendations for BOTH stores
+4. All pages (Dashboard, Inventory) update for the selected store
+5. Navigate to **AI Insights** to see combined AI recommendations for BOTH stores, with a store filter to drill into one at a time
 
 **For Mrs. S. Mukherjee (owns XYZ Electronics only):**
 
-1. Log in with `mukherjee@demo.com` / `mukh123`
+1. Log in with `mukherjee@xyz.com` / `mukh123`
 2. The sidebar shows only **XYZ Electronics** (no switching needed)
 3. All data is scoped to XYZ Electronics
 
@@ -127,15 +128,30 @@ retail_ai_app/
 
 ## 📝 Registration Guide
 
-1. Visit **http://localhost:3000/register**
-2. Enter Owner Name, Email, Password
-3. Add one or more stores (each with a name and type: General / Electronics / Automotive)
-4. Click **Register** — you'll be logged in automatically
-5. The app initializes demo inventory and products for your stores
+New owners can register at **http://localhost:3000/register**.
 
-**Adding more stores after registration:**
-- Use the **POST /api/stores** endpoint with your auth token
-- Or contact the developer to add the UI feature
+### Steps:
+1. Enter **Owner Name**, **Email**, **Password**
+2. Add one or more stores — each needs a **Store Name** and **Type** (General / Electronics / Automotive / Other)
+3. Click **Register** — you'll be logged in automatically and land on the Dashboard
+
+### After registration:
+- Your stores start with an **empty inventory**
+- Go to **Settings → Add Product** to add products manually
+- Or use **Settings → Upload Excel** to bulk-import products and sales history via the provided template
+- You can add more stores at any time via **Settings → Add New Store**
+
+### Newly registered user demo record (example):
+Once you register, your entry looks like this in the system:
+
+| Field       | Value (example)             |
+|-------------|-----------------------------|
+| Owner Name  | Your Name                   |
+| Email       | yourname@example.com        |
+| Password    | yourpassword                |
+| Store(s)    | Your Store Name (type)      |
+
+> 💡 **Tip for demos:** After registering, note down the credentials above — they won't appear anywhere in the UI (by design). Use them to log in again or share with demo audiences.
 
 ---
 
@@ -191,11 +207,14 @@ python seed_data.py
 | POST | `/api/stores` | Add new store |
 | GET | `/api/stores/:id/dashboard` | Dashboard summary |
 | GET | `/api/stores/:id/inventory` | Inventory status |
-| GET | `/api/stores/:id/insights` | AI recommendations |
+| GET | `/api/stores/:id/insights` | AI recommendations (per store) |
 | GET | `/api/stores/:id/sales/monthly` | Monthly sales |
 | GET | `/api/stores/:id/sales/category` | Category sales |
 | GET | `/api/stores/:id/sales/stockout-losses` | Stockout loss estimates |
-| GET | `/api/owner/all-recommendations` | All recs across all stores |
+| GET | `/api/owner/all-recommendations` | All insights across all stores |
+| POST | `/api/stores/:id/products` | Add product |
+| PUT | `/api/stores/:id/products/:pid` | Update product/inventory |
+| DELETE | `/api/stores/:id/products/:pid` | Delete product |
 
 ---
 

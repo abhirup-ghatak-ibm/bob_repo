@@ -33,12 +33,10 @@ function fmtRs(amount) {
 }
 
 /**
- * Filter monthlySales rows to the FY window: Apr 2024 → Mar 2026.
- * Returns an object with filtered labels and data arrays.
+ * Filter monthlySales rows to the historical FY window: Apr 2024 → Mar 2026.
  */
-function filterFYWindow(monthlySales) {
-  // FY window: Apr 2024 (yr=2024, mo=4) inclusive → Mar 2026 (yr=2026, mo=3) inclusive
-  const filtered = monthlySales.filter(r => {
+function filterHistoricalFYWindow(monthlySales) {
+  return monthlySales.filter(r => {
     const yr = parseInt(r.yr);
     const mo = parseInt(r.mo);
     if (yr === 2024 && mo >= 4) return true;
@@ -46,7 +44,41 @@ function filterFYWindow(monthlySales) {
     if (yr === 2026 && mo <= 3) return true;
     return false;
   });
-  return filtered;
+}
+
+/**
+ * Filter monthlySales rows to the current real FY window:
+ *   Apr of current-FY-start year → current real calendar month (inclusive).
+ * Current FY start: if current month >= April → this year; else last year.
+ */
+function filterCurrentFYWindow(monthlySales) {
+  const today = new Date();
+  const nowYr = today.getFullYear();
+  const nowMo = today.getMonth() + 1; // 1-based
+  const fyStart = nowMo >= 4 ? nowYr : nowYr - 1;
+
+  return monthlySales.filter(r => {
+    const yr = parseInt(r.yr);
+    const mo = parseInt(r.mo);
+    // Must be within [Apr fyStart, nowMo nowYr]
+    const rowIsAfterStart = (yr > fyStart) || (yr === fyStart && mo >= 4);
+    const rowIsBeforeOrAtNow = (yr < nowYr) || (yr === nowYr && mo <= nowMo);
+    return rowIsAfterStart && rowIsBeforeOrAtNow;
+  });
+}
+
+/**
+ * Build chart labels from rows, hiding label text for even-numbered months.
+ * Data points still exist for all months; only the tick label is blank for even months.
+ */
+function buildLabels(rows) {
+  return rows.map(r => {
+    const mo = parseInt(r.mo);
+    // Odd months: 1=Jan,3=Mar,5=May,7=Jul,9=Sep,11=Nov — show label
+    // Even months: 2=Feb,4=Apr,6=Jun,8=Aug,10=Oct,12=Dec — blank label
+    if (mo % 2 === 0) return ''; // even month — no label
+    return `${MONTHS[mo - 1]} ${r.yr}`;
+  });
 }
 
 export default function DashboardPage() {
@@ -96,30 +128,44 @@ export default function DashboardPage() {
   if (loading) return <div className="main-content"><Spinner /></div>;
   if (error)   return <div className="main-content"><div className="error-msg">{error}</div></div>;
 
-  // ── FY-windowed chart data (Apr 2024 → Mar 2026) ─────────────────────────
-  const fyRows        = filterFYWindow(monthlySales);
-  const fyLabels      = fyRows.map(r => `${MONTHS[parseInt(r.mo) - 1]} ${r.yr}`);
-  const fyRevenue     = fyRows.map(r => r.revenue);
-  const fyOrders      = fyRows.map(r => r.orders);
+  // ── Historical FY chart data (Apr 2024 → Mar 2026) ───────────────────────
+  const histRows    = filterHistoricalFYWindow(monthlySales);
+  const histLabels  = buildLabels(histRows);
+  const histRevenue = histRows.map(r => r.revenue);
+  const histOrders  = histRows.map(r => r.orders);
 
-  // Revenue bar — FY window
-  const barChartData = {
-    labels: fyLabels,
+  // ── Current FY chart data (Apr current-FY-start → real current month) ────
+  const today    = new Date();
+  const nowYr    = today.getFullYear();
+  const nowMo    = today.getMonth() + 1;
+  const fyStart  = nowMo >= 4 ? nowYr : nowYr - 1;
+  const fyLabel  = `FY ${fyStart}-${String(fyStart + 1).slice(-2)}`;
+
+  const curRows    = filterCurrentFYWindow(monthlySales);
+  const curLabels  = buildLabels(curRows);
+  const curRevenue = curRows.map(r => r.revenue);
+  const curOrders  = curRows.map(r => r.orders);
+
+  // ── Chart datasets ────────────────────────────────────────────────────────
+
+  // Historical Revenue bar
+  const histBarData = {
+    labels: histLabels,
     datasets: [{
       label: 'Revenue (₹)',
-      data:  fyRevenue,
+      data:  histRevenue,
       backgroundColor: 'rgba(59,130,212,0.7)',
       borderColor: '#3b82d4',
       borderWidth: 1,
     }],
   };
 
-  // Orders line — FY window
-  const lineChartData = {
-    labels: fyLabels,
+  // Historical Orders line
+  const histLineData = {
+    labels: histLabels,
     datasets: [{
       label: 'Orders',
-      data:  fyOrders,
+      data:  histOrders,
       borderColor: '#7c5cd8',
       backgroundColor: 'rgba(124,92,216,0.1)',
       tension: 0.35,
@@ -128,17 +174,41 @@ export default function DashboardPage() {
     }],
   };
 
-  // ── Chart options with improved tick resolution ───────────────────────────
-  // Show every tick (all 24 months in FY window) — they fit at ~45° rotation
-  const chartOptions = {
+  // Current FY Revenue bar
+  const curBarData = {
+    labels: curLabels,
+    datasets: [{
+      label: 'Revenue (₹)',
+      data:  curRevenue,
+      backgroundColor: 'rgba(34,197,94,0.7)',
+      borderColor: '#22c55e',
+      borderWidth: 1,
+    }],
+  };
+
+  // Current FY Orders line
+  const curLineData = {
+    labels: curLabels,
+    datasets: [{
+      label: 'Orders',
+      data:  curOrders,
+      borderColor: '#f59e0b',
+      backgroundColor: 'rgba(245,158,11,0.1)',
+      tension: 0.35,
+      fill: true,
+      pointRadius: 2,
+    }],
+  };
+
+  // ── Chart options ─────────────────────────────────────────────────────────
+  const makeChartOptions = (labelCount) => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
       x: {
         ticks: {
-          // Show all months; rotate labels so none are clipped
-          maxTicksLimit: fyLabels.length,
+          maxTicksLimit: labelCount,
           maxRotation: 45,
           minRotation: 45,
           autoSkip: false,
@@ -148,7 +218,10 @@ export default function DashboardPage() {
       y: { ticks: { font: { size: 10 } } },
     },
     layout: { padding: { bottom: 8 } },
-  };
+  });
+
+  const histChartOptions = makeChartOptions(histLabels.length);
+  const curChartOptions  = makeChartOptions(curLabels.length);
 
   // ── Category doughnut (all-time) ──────────────────────────────────────────
   const catTotals = {};
@@ -178,7 +251,6 @@ export default function DashboardPage() {
 
   // ── KPI numbers ───────────────────────────────────────────────────────────
   const inv         = summary?.inventory || {};
-  // "All-Time Revenue" — sum of ALL months across ALL FYs in the DB
   const totalRevFmt = summary?.total_revenue_2yr ? fmtRs(summary.total_revenue_2yr) : '₹—';
   const recentRevFmt= summary?.recent_3mo_revenue ? fmtRs(summary.recent_3mo_revenue) : '₹—';
   const totalLoss   = losses.reduce((sum, l) => sum + l.estimated_weekly_loss, 0);
@@ -186,7 +258,6 @@ export default function DashboardPage() {
   // ── GST stat cards ────────────────────────────────────────────────────────
   const completedFYs = gstData.filter(g => !g.is_current);
   const currentFY    = gstData.find(g => g.is_current);
-  // Last-2-FYs total revenue (for transparency next to "All-Time")
   const last2FYsRevenue = completedFYs.slice(-2).reduce((s, g) => s + g.revenue, 0);
 
   return (
@@ -235,7 +306,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── Current FY highlight (Fix 5) ── */}
+      {/* ── Current FY highlight bar ── */}
       {currentFY && (
         <div style={{
           background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:'8px',
@@ -287,19 +358,54 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ── Charts: Revenue + Orders (FY Apr 2024 → Mar 2026) ── */}
+      {/* ── Section: Current FY Charts ── */}
+      {curRows.length > 0 && (
+        <>
+          <div style={{
+            fontSize: '12px', fontWeight: 700, color: 'var(--text)',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            marginBottom: '10px', marginTop: '8px',
+            borderLeft: '3px solid var(--success)', paddingLeft: '10px',
+          }}>
+            {fyLabel} — Current Financial Year (Apr {fyStart} → {MONTHS[nowMo - 1]} {nowYr})
+          </div>
+          <div className="charts-grid" style={{ marginBottom: '24px' }}>
+            <div className="chart-card">
+              <h3>Monthly Revenue — {fyLabel} YTD (₹)</h3>
+              <div style={{ height: 240 }}>
+                <Bar data={curBarData} options={curChartOptions} />
+              </div>
+            </div>
+            <div className="chart-card">
+              <h3>Monthly Order Volume — {fyLabel} YTD</h3>
+              <div style={{ height: 240 }}>
+                <Line data={curLineData} options={curChartOptions} />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Section: Historical FY Charts (Apr 2024 → Mar 2026) ── */}
+      <div style={{
+        fontSize: '12px', fontWeight: 700, color: 'var(--text)',
+        textTransform: 'uppercase', letterSpacing: '0.5px',
+        marginBottom: '10px',
+        borderLeft: '3px solid var(--accent)', paddingLeft: '10px',
+      }}>
+        Historical — FY 2024-25 &amp; FY 2025-26 (Apr 2024 → Mar 2026)
+      </div>
       <div className="charts-grid">
         <div className="chart-card">
           <h3>Monthly Revenue — FY 2024-25 &amp; FY 2025-26 (₹)</h3>
-          {/* Extra height to accommodate rotated labels without clipping */}
           <div style={{ height: 240 }}>
-            <Bar data={barChartData} options={chartOptions} />
+            <Bar data={histBarData} options={histChartOptions} />
           </div>
         </div>
         <div className="chart-card">
           <h3>Monthly Order Volume — FY 2024-25 &amp; FY 2025-26</h3>
           <div style={{ height: 240 }}>
-            <Line data={lineChartData} options={chartOptions} />
+            <Line data={histLineData} options={histChartOptions} />
           </div>
         </div>
       </div>

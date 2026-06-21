@@ -1,9 +1,22 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { addStore, addProduct, getProducts, downloadTemplate, uploadExcelData } from '../api';
+import { addStore, addProduct, getProducts, downloadTemplate, uploadExcelData, deleteProduct } from '../api';
 import { Spinner, StoreTypeBadge } from '../components/UI';
 
 const STORE_TYPE_ICONS = { general: '🏪', electronics: '💻', automotive: '🚗' };
+
+// ── Per-store-type placeholder suggestions for Product Name ─────────────────
+const PRODUCT_NAME_PLACEHOLDERS = {
+  general:     'e.g. Cold Beverages',
+  electronics: 'e.g. Smartphone 128GB',
+  automotive:  'e.g. Car Tires (205/55 R16)',
+};
+
+const CATEGORY_PLACEHOLDERS = {
+  general:     'e.g. beverages',
+  electronics: 'e.g. smartphones',
+  automotive:  'e.g. tires',
+};
 
 // ── Small reusable modal backdrop ──────────────────────────────────────────
 
@@ -109,6 +122,11 @@ function AddStoreModal({ onClose, onAdded }) {
 // ── Add Product modal ──────────────────────────────────────────────────────
 
 function AddProductModal({ store, onClose, onAdded }) {
+  const storeType = store.store_type;
+  // Use store-type-specific placeholders; fall back to no placeholder for unknown types
+  const namePlaceholder     = PRODUCT_NAME_PLACEHOLDERS[storeType] || '';
+  const categoryPlaceholder = CATEGORY_PLACEHOLDERS[storeType]     || '';
+
   const [form, setForm] = useState({
     name:'', category:'', subcategory:'', brand:'', variant:'',
     unit_price:'', cost_price:'', quantity:'0',
@@ -162,11 +180,11 @@ function AddProductModal({ store, onClose, onAdded }) {
       {error && <div className="error-msg">{error}</div>}
       <form onSubmit={handleSubmit}>
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 14px'}}>
-          <div style={{gridColumn:'1/-1'}}>{field('Product Name','name','text',true,'e.g. Cold Beverages')}</div>
-          {field('Category','category','text',true,'e.g. beverages')}
-          {field('Subcategory','subcategory','text',false,'e.g. drinks')}
-          {field('Brand','brand','text',false,'e.g. Coca-Cola')}
-          {field('Variant','variant','text',false,'e.g. 500ml')}
+          <div style={{gridColumn:'1/-1'}}>{field('Product Name','name','text',true, namePlaceholder)}</div>
+          {field('Category','category','text',true, categoryPlaceholder)}
+          {field('Subcategory','subcategory','text',false,'')}
+          {field('Brand','brand','text',false,'')}
+          {field('Variant','variant','text',false,'')}
           {field('Unit Price (₹)','unit_price','number',true,'0')}
           {field('Cost Price (₹)','cost_price','number',false,'0')}
           {field('Current Stock','quantity','number',false,'0')}
@@ -196,7 +214,7 @@ function AddProductModal({ store, onClose, onAdded }) {
 
 // ── Excel upload section ───────────────────────────────────────────────────
 
-function ExcelUploadSection({ store }) {
+function ExcelUploadSection({ store, onUploaded }) {
   const [uploading,  setUploading]  = useState(false);
   const [result,     setResult]     = useState(null);
   const [dragOver,   setDragOver]   = useState(false);
@@ -225,6 +243,7 @@ function ExcelUploadSection({ store }) {
     try {
       const res = await uploadExcelData(store.id, file);
       setResult(res.data);
+      if (onUploaded) onUploaded();
     } catch (err) {
       setResult({ error: err.response?.data?.error || 'Upload failed' });
     } finally {
@@ -312,13 +331,13 @@ function ExcelUploadSection({ store }) {
 // ── Main Settings Page ──────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { owner, stores, activeStore, switchStore } = useAuth();
+  const { stores, activeStore, switchStore, touchRefresh } = useAuth();
   const [showAddStore,   setShowAddStore]   = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [products,       setProducts]       = useState([]);
   const [prodLoading,    setProdLoading]    = useState(false);
   const [prodMsg,        setProdMsg]        = useState('');
-  const [addedStores,    setAddedStores]    = useState([]);
+  const [deletingId,     setDeletingId]     = useState(null);
 
   const loadProducts = useCallback(async () => {
     if (!activeStore) return;
@@ -338,7 +357,25 @@ export default function SettingsPage() {
   const handleProductAdded = () => {
     setProdMsg('Product added successfully!');
     loadProducts();
+    touchRefresh();
     setTimeout(() => setProdMsg(''), 3000);
+  };
+
+  const handleDeleteProduct = async (product) => {
+    if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) return;
+    setDeletingId(product.id);
+    try {
+      await deleteProduct(activeStore.id, product.id);
+      setProdMsg(`"${product.name}" deleted.`);
+      loadProducts();
+      touchRefresh();
+      setTimeout(() => setProdMsg(''), 3000);
+    } catch (err) {
+      setProdMsg(err.response?.data?.error || 'Failed to delete product.');
+      setTimeout(() => setProdMsg(''), 4000);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   if (!activeStore) return (
@@ -411,7 +448,12 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {prodMsg && <div className="success-msg">{prodMsg}</div>}
+        {prodMsg && (
+          <div className={`${prodMsg.includes('deleted') || prodMsg.includes('Failed') ? 'error-msg' : 'success-msg'}`}
+            style={prodMsg.includes('deleted') ? {background:'#fef3c7',border:'1px solid #fcd34d',color:'#92400e'} : {}}>
+            {prodMsg}
+          </div>
+        )}
 
         {prodLoading ? <Spinner /> : products.length === 0 ? (
           <div className="card text-center text-muted" style={{padding:'32px'}}>
@@ -432,6 +474,7 @@ export default function SettingsPage() {
                     <th className="text-right">In Stock</th>
                     <th className="text-right">Reorder At</th>
                     <th>Perishable</th>
+                    <th style={{textAlign:'center'}}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -453,6 +496,21 @@ export default function SettingsPage() {
                           ? <span className="badge badge-high">YES</span>
                           : <span style={{color:'var(--muted)',fontSize:'12px'}}>No</span>}
                       </td>
+                      <td style={{textAlign:'center'}}>
+                        <button
+                          onClick={() => handleDeleteProduct(p)}
+                          disabled={deletingId === p.id}
+                          title="Delete product"
+                          style={{
+                            background:'none', border:'1px solid var(--border)',
+                            borderRadius:'4px', padding:'3px 10px', cursor:'pointer',
+                            fontSize:'12px', color:'var(--danger)',
+                            opacity: deletingId === p.id ? 0.5 : 1,
+                          }}
+                        >
+                          {deletingId === p.id ? '…' : '🗑 Delete'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -465,13 +523,13 @@ export default function SettingsPage() {
       <div style={{borderTop:'1px solid var(--border)', margin:'0 0 24px'}} />
 
       {/* ── Excel Upload ── */}
-      <ExcelUploadSection store={activeStore} />
+      <ExcelUploadSection store={activeStore} onUploaded={() => { loadProducts(); touchRefresh(); }} />
 
       {/* Modals */}
       {showAddStore && (
         <AddStoreModal
           onClose={() => setShowAddStore(false)}
-          onAdded={(s) => setAddedStores(prev => [...prev, s])}
+          onAdded={(s) => {}}
         />
       )}
       {showAddProduct && (

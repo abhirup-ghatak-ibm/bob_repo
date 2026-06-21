@@ -79,6 +79,24 @@ def logout():
     return jsonify({"message": "Logged out"})
 
 
+def _validate_password(pw: str):
+    """Return an error string if the password doesn't meet policy, else None.
+    Policy: min 8 chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special char.
+    """
+    import re
+    if len(pw) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r'[A-Z]', pw):
+        return "Password must contain at least one uppercase letter."
+    if not re.search(r'[a-z]', pw):
+        return "Password must contain at least one lowercase letter."
+    if not re.search(r'[0-9]', pw):
+        return "Password must contain at least one number."
+    if not re.search(r'[^A-Za-z0-9]', pw):
+        return "Password must contain at least one special character (e.g. @, #, !, $)."
+    return None
+
+
 @app.route("/api/auth/register", methods=["POST"])
 def register():
     data       = request.get_json()
@@ -91,6 +109,10 @@ def register():
         return jsonify({"error": "Name, email and password are required"}), 400
     if not store_names:
         return jsonify({"error": "At least one store is required"}), 400
+
+    pw_error = _validate_password(password)
+    if pw_error:
+        return jsonify({"error": pw_error}), 400
 
     db = get_db()
     existing = db.execute("SELECT id FROM owners WHERE email = ?", (email,)).fetchone()
@@ -495,6 +517,29 @@ def update_product(store_id, product_id):
     return jsonify({"message": "Updated"})
 
 
+@app.route("/api/stores/<int:store_id>/products/<int:product_id>", methods=["DELETE"])
+def delete_product(store_id, product_id):
+    """Delete a product and its inventory row from the store."""
+    owner_id = _get_owner_id()
+    if not owner_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _owner_owns_store(owner_id, store_id):
+        return jsonify({"error": "Forbidden"}), 403
+
+    db = get_db()
+    prod = db.execute("SELECT id FROM products WHERE id=? AND store_id=?",
+                      (product_id, store_id)).fetchone()
+    if not prod:
+        db.close()
+        return jsonify({"error": "Product not found"}), 404
+
+    db.execute("DELETE FROM inventory WHERE product_id=? AND store_id=?", (product_id, store_id))
+    db.execute("DELETE FROM products WHERE id=? AND store_id=?", (product_id, store_id))
+    db.commit()
+    db.close()
+    return jsonify({"message": "Deleted"})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Excel template download + historical data upload
 # ─────────────────────────────────────────────────────────────────────────────
@@ -534,11 +579,11 @@ def download_template(store_id):
     )
 
     prod_headers = [
-        ("Product Name *",    True,  "Name of the product (e.g. Cold Beverages)"),
-        ("Category *",        True,  "Main category (e.g. beverages, dairy, electronics, vehicles)"),
-        ("Subcategory",       False, "Optional sub-group (e.g. drinks, milk, smartphones)"),
-        ("Brand",             False, "Brand name (e.g. Amul, Samsung)"),
-        ("Variant",           False, "Size/model/variant (e.g. 500ml, 64GB)"),
+        ("Product Name *",    True,  "Name of the product (e.g. Football Size 5)"),
+        ("Category *",        True,  "Main category (e.g. sports, electronics, vehicles)"),
+        ("Subcategory",       False, "Optional sub-group (e.g. team sports, racket sports)"),
+        ("Brand",             False, "Brand name (e.g. Nike, Adidas)"),
+        ("Variant",           False, "Size/model/variant (e.g. Size 5, 200g)"),
         ("Unit Price (₹) *",  True,  "Selling price per unit"),
         ("Cost Price (₹) *",  True,  "Purchase/cost price per unit"),
         ("Current Stock *",   True,  "Current quantity in stock"),
@@ -557,17 +602,15 @@ def download_template(store_id):
         ws_prod.cell(row=2, column=col).border = THIN
         ws_prod.column_dimensions[get_column_letter(col)].width = max(18, len(header) + 2)
 
-    # Mark required columns with red star notation in row 3 hint
+    # Mark required columns with bold white font (already set via HDR_FONT; keep consistent)
     for col, (header, required, _) in enumerate(prod_headers, 1):
         if required:
             cell = ws_prod.cell(row=1, column=col)
             cell.font = Font(color="FFFFFF", bold=True)
 
-    # Sample rows
+    # ONE example row only
     samples = [
-        ["Cold Beverages", "beverages", "drinks", "Coca-Cola", "500ml", 50, 30, 120, 20, 200, ""],
-        ["Fresh Milk",     "dairy",     "milk",   "Amul",      "1L",   65, 50,  80, 15, 150, "YES"],
-        ["Rice",           "grocery",   "grains", "India Gate","5kg", 350,270,  60, 10, 100, ""],
+        ["Football Size 5", "sports", "team sports", "Nike", "Size 5", 799, 550, 50, 10, 200, ""],
     ]
     for r, row in enumerate(samples, 3):
         for c, val in enumerate(row, 1):
@@ -601,10 +644,9 @@ def download_template(store_id):
         ws_sales.cell(row=2, column=col).border = THIN
         ws_sales.column_dimensions[get_column_letter(col)].width = max(20, len(header) + 2)
 
+    # ONE example row only
     sales_samples = [
-        ["2024-06-01", "Cold Beverages", 15, 50, "Walk-in Customer"],
-        ["2024-06-01", "Fresh Milk",      8, 65, ""],
-        ["2024-06-02", "Rice",            3,350, "Rahul Sharma"],
+        ["2024-06-01", "Football Size 5", 3, 799, "Walk-in Customer"],
     ]
     for r, row in enumerate(sales_samples, 3):
         for c, val in enumerate(row, 1):
@@ -652,16 +694,11 @@ def download_template(store_id):
     wb.save(buf)
     buf.seek(0)
 
-    db = get_db()
-    store = db.execute("SELECT name FROM stores WHERE id=?", (store_id,)).fetchone()
-    db.close()
-    store_name = (store["name"] if store else "store").replace(" ", "_")
-
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name=f"RetailAI_Upload_Template_{store_name}.xlsx"
+        download_name="RetailAI Template.xlsx"
     )
 
 

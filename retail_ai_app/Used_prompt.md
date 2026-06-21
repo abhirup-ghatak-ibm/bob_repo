@@ -60,15 +60,20 @@ The application should simulate multiple stores, including:
 Pre-create login credentials:
 
 1. Mr. A. Sharma
-   - Owns:
-     - ABC Store
-     - MNO Motors
+   - Email: `sharma@abc.com`
+   - Password: `sharma123`
+   - Owns: ABC Store, MNO Motors
 
 2. Mrs. S. Mukherjee
-   - Owns:
-     - XYZ Electronics
+   - Email: `mukherjee@xyz.com`
+   - Password: `mukh123`
+   - Owns: XYZ Electronics
 
 Provide these credentials clearly in README for demo.
+The README must also include a **Registration Guide** section that:
+- Documents the registration steps for new users
+- Includes a **demo record table** (example: Owner Name, Email, Password, Store) that mirrors the pre-seeded owner sections, so a demo presenter can note down new user credentials
+- Advises users to note their credentials since the login page does not display them
 
 ### Multi-Store Access
 - If a user owns multiple stores:
@@ -97,6 +102,15 @@ Provide these credentials clearly in README for demo.
   - Store Name(s)
   - Email
   - Password (hashed)
+
+- **Password Policy (enforced on both frontend and backend):**
+  - Minimum **8 characters**
+  - At least **1 uppercase** letter
+  - At least **1 lowercase** letter
+  - At least **1 number**
+  - At least **1 special character** (e.g. `@`, `#`, `!`, `$`)
+  - Client-side live feedback shown while typing; Register button disabled until policy is met
+  - Server-side validation also enforces the same policy and returns an error if violated
 
 - Newly registered users:
   - **Must start with an empty inventory** — no auto-seeded products
@@ -164,8 +178,19 @@ Create a local AI agent (no external APIs) that:
 - Missed opportunities due to demand spikes
 
 ### Store-Specific Insights
-- AI must generate insights per store. But in All Recommendations tab, as stated above, can put all the recommendations owner-wise, combined of all stores per Owner.
+- AI must generate insights per store. But in AI Insights tab, as stated above, can put all the recommendations owner-wise, combined of all stores per Owner.
 - No cross-store mixing of patterns otherwise
+
+### Insights Only When Sales History Exists (CRITICAL)
+- **For new stores (or any store with no sales data), the AI engine must return NO business insights**
+- Showing grocery, beverage, Onam, or any other generic insight to a Sports retailer or any newly registered store is incorrect behaviour
+- The engine must check whether the store has at least one completed order before generating any insight
+- If no orders exist, return a single informational message: *"No sales history yet — upload your historical data via Settings → Upload Excel to unlock AI insights"*
+- Festival and weather insights must be **filtered against the store's actual product categories** — do not surface a "cold beverages" weather alert for a store that sells motorbikes
+- The AI agent reads **both products AND order history** to generate context-accurate insights:
+  - Products define what categories the store sells
+  - Order history drives seasonal patterns, demand spikes, and loss estimates
+  - Without both, no pattern-based insights should be generated
 
 ---
 
@@ -220,6 +245,13 @@ Generate insights like:
   - Switch between stores
 - Single-store users see only one
 
+### Sidebar Navigation Tabs
+- **Dashboard** — Sales performance and inventory health
+- **Inventory** — Stock levels, reorder suggestions, and stock management
+- **AI Insights** — Combined AI insights across all stores owned by the user, with per-store filter (replaces the former separate "Store Insights(AI)" and "All Insights" tabs)
+- **Settings** — Manage stores, products, and data uploads
+- **Contact RetailAI** — Support contact information (email: support@RetailAI.com, phone: 9876543210)
+
 ### Settings Page (accessible to ALL owners via sidebar)
 - **Add Store section**
   - Any owner can add a new store at any time from the Settings page
@@ -231,14 +263,22 @@ Generate insights like:
   - If the store has no products yet, an empty-state message guides the owner to add products or upload Excel
 - **Upload Historical Data (Excel)**
   - Owners can upload historical data in a prescribed Excel format
-  - A **Download Template** button provides the pre-formatted .xlsx file
+  - A **Download Template** button provides the pre-formatted .xlsx file named **"RetailAI Template.xlsx"** (fixed name, not store-specific)
   - The template contains 3 sheets:
-    1. **Products** — with required columns marked with `*` (red star in header)
-    2. **Sales History** — order-level historical sales rows
+    1. **Products** — with required columns marked with `*` (red star in header); contains exactly **one example data row** (not more)
+    2. **Sales History** — order-level historical sales rows; contains exactly **one example data row**
     3. **Instructions** — step-by-step guidance for filling the template
-  - Required fields are visually highlighted (blue background in sample rows)
+  - Example row in the template uses a generic sports product ("Football Size 5") so it is not misleading to non-sports stores
+  - Required fields are visually highlighted (blue background in example rows)
   - On upload: new products are created; existing product quantities are updated; sales history rows are inserted
   - Upload result shows: products added, products updated, sales imported, rows skipped, and any row-level warnings
+
+### Pre-built Demo Data File — Sports Retail
+- A pre-built Excel file **"RetailAI template Sports.xlsx"** is provided in the workspace root (`SALES_MNGR/`) for demo purposes
+- This file is **not inserted into the database automatically** — it must be uploaded by an owner through the portal (Settings → Upload Excel)
+- **Products sheet** contains 38 sports products across 12 categories: Football, Cricket, Hockey, Badminton, Tennis, Table Tennis, Chess, Carom, Yoga, Swimming, Cycling, Jogging
+- **Sales History sheet** contains generated realistic sales data from **April 2024 to current date**, with seasonal demand patterns per sport
+- This file is intended for demo use with the Sports retail store owner registration scenario
 
 ---
 
@@ -251,13 +291,22 @@ Generate insights like:
   - Dashboard
   - Inventory
   - AI Insights
-  - All Recs
   - Settings
+  - Contact RetailAI
   - Login
 - **Login page must NOT display demo credentials** — credentials are documented in README only
-- Monthly order/revenue charts show the Financial Year window (Apr 2024 → Mar 2026)
-  - All 24 month labels visible with 45° rotation — no truncation
+- **Login and Register pages must display the RetailAI logo** at the top of the card, styled consistently with the sidebar logo (same "Retail" + blue "AI" branding, adjusted to an appropriate size for the auth card)
+- Monthly order/revenue charts:
+  - **Historical chart** — shows last 2 Financial Years window (Apr 2024 → Mar 2026), always fixed
+  - **Current FY chart** — shows the current Financial Year (Apr of current FY start → current real calendar month), based on actual system date
+  - In all graphs, **only odd-numbered month names are shown on the X-axis** (Jan, Mar, May, Jul, Sep, Nov) — even-numbered months (Feb, Apr, Jun, Aug, Oct, Dec) have no label but their data bars/points are still fully visible
+  - This reduces clutter without losing any data
   - Chart height set to 240px to accommodate rotated tick labels
+- **Last Refresh Timestamp** displayed in the top-right corner of the UI (inside every sidebar-adjacent area):
+  - Shows "Last refreshed: DD MMM YYYY, HH:MM:SS" format
+  - Updated whenever any Owner changes data (inventory, adds product, adds store, uploads Excel)
+  - Updated whenever an Owner logs in
+  - Stored in localStorage and visible across all tabs
 - Large monetary values use compact Indian notation: ₹5K, ₹31L, ₹210L, ₹3.2Cr
 
 ---

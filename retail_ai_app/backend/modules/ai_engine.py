@@ -1,6 +1,11 @@
 """
 AI/Analytics Engine - Local rule-based + statistical demand forecasting.
 No external APIs. Generates store-specific insights and recommendations.
+
+IMPORTANT: For stores with no sales history, no AI insights are generated.
+Insights are produced only when the store has actual sales data (from seed or
+uploaded Excel). Products alone (without orders) are not sufficient to trigger
+recommendations — the engine reads both products and order history.
 """
 import sqlite3
 from datetime import datetime, date, timedelta
@@ -63,6 +68,22 @@ class AIEngine:
     def _store_type(self) -> str:
         return self._store.get("store_type", "general")
 
+    def _has_sales_history(self) -> bool:
+        """Return True only if this store has at least one completed order."""
+        row = self.db.execute(
+            "SELECT COUNT(*) AS cnt FROM orders WHERE store_id = ? AND status = 'completed'",
+            (self.store_id,)
+        ).fetchone()
+        return (row["cnt"] if row else 0) > 0
+
+    def _store_product_categories(self) -> set:
+        """Return the set of product categories that exist in this store's inventory."""
+        rows = self.db.execute(
+            "SELECT DISTINCT p.category FROM products p WHERE p.store_id = ?",
+            (self.store_id,)
+        ).fetchall()
+        return {r["category"].lower() for r in rows}
+
     # ── Monthly sales aggregation ──────────────────────────────────────────
 
     def monthly_sales(self):
@@ -122,9 +143,13 @@ class AIEngine:
     # ── Stockout detection → revenue loss estimate ─────────────────────────
 
     def stockout_losses(self):
-        """Estimate lost revenue from stockout days."""
+        """Estimate lost revenue from stockout days.
+        Only meaningful when there is sales history to derive average daily qty.
+        """
+        if not self._has_sales_history():
+            return []
         rows = self.db.execute("""
-            SELECT p.name, p.category, p.unit_price,
+            SELECT p.id, p.name, p.category, p.unit_price,
                    i.quantity, i.reorder_level
             FROM inventory i
             JOIN products p ON i.product_id = p.id
@@ -138,7 +163,7 @@ class AIEngine:
                 JOIN orders o ON oi.order_id = o.id
                 WHERE o.store_id = ? AND oi.product_id = ?
                   AND o.order_date >= date('now','-30 days')
-            """, (self.store_id, r["id"] if "id" in r.keys() else 0)).fetchone()
+            """, (self.store_id, r["id"])).fetchone()
             daily_qty = (avg["avg_daily"] or 2)
             est_loss = daily_qty * 7 * r["unit_price"]
             losses.append({
@@ -151,6 +176,9 @@ class AIEngine:
     # ── Seasonal pattern detection ─────────────────────────────────────────
 
     def seasonal_patterns(self):
+        """Only computed when sales history exists."""
+        if not self._has_sales_history():
+            return {}
         cat_sales = self.category_sales()
         by_cat = {}
         for row in cat_sales:
@@ -183,7 +211,13 @@ class AIEngine:
     # ── Festival impact analysis ───────────────────────────────────────────
 
     def festival_opportunities(self):
+        """Festival insights are only shown when the store has sales history
+        AND the impacted category matches a category the store actually sells.
+        """
+        if not self._has_sales_history():
+            return []
         store_type = self._store_type()
+        store_categories = self._store_product_categories()
         upcoming = self.db.execute("""
             SELECT festival_name, festival_date, impact_category, demand_multiplier
             FROM festival_calendar
@@ -195,18 +229,29 @@ class AIEngine:
         for f in upcoming:
             impact_map = FESTIVAL_IMPACT.get(f["festival_name"], {})
             multiplier = impact_map.get(store_type, impact_map.get("all", 1.0))
-            if multiplier > 1.1:
-                opps.append({
-                    "festival": f["festival_name"],
-                    "date": f["festival_date"],
-                    "multiplier": multiplier,
-                    "impact_category": f["impact_category"],
-                })
+            if multiplier <= 1.1:
+                continue
+            # Only surface the festival insight if the impacted category
+            # exists among the store's own product categories
+            impact_cat = (f["impact_category"] or "").lower()
+            if impact_cat and impact_cat not in store_categories:
+                continue
+            opps.append({
+                "festival": f["festival_name"],
+                "date": f["festival_date"],
+                "multiplier": multiplier,
+                "impact_category": f["impact_category"],
+            })
         return opps
 
     # ── Weather impact ────────────────────────────────────────────────────
 
     def weather_impact_summary(self):
+        """Weather impact is only relevant when there is sales history
+        and the affected categories match products the store actually sells.
+        """
+        if not self._has_sales_history():
+            return {"dominant_condition": "normal", "impacts": {}}
         recent_weather = self.db.execute("""
             SELECT condition, COUNT(*) AS cnt
             FROM weather_history
@@ -217,8 +262,12 @@ class AIEngine:
         if not recent_weather:
             return {"dominant_condition": "normal", "impacts": {}}
         dominant = recent_weather[0]["condition"]
-        impacts = WEATHER_IMPACT.get(dominant, {})
-        return {"dominant_condition": dominant, "impacts": impacts}
+        raw_impacts = WEATHER_IMPACT.get(dominant, {})
+        # Filter to only categories the store actually sells
+        store_categories = self._store_product_categories()
+        filtered = {cat: factor for cat, factor in raw_impacts.items()
+                    if cat in store_categories}
+        return {"dominant_condition": dominant, "impacts": filtered}
 
     # ── Overstock detection ───────────────────────────────────────────────
 
@@ -243,14 +292,32 @@ class AIEngine:
     # ── Master recommendations generator ─────────────────────────────────
 
     def generate_recommendations(self):
-        recs = []
         store_name = self._store.get("name", "Store")
         store_type = self._store_type()
         today = date.today()
         current_month = today.month
         season = _season(current_month)
 
-        # 1. Seasonal recommendations
+        # ── Guard: no sales history → no insights ────────────────────────
+        if not self._has_sales_history():
+            return [{
+                "type": "opportunity",
+                "priority": "low",
+                "title": "No Sales History Yet",
+                "message": (
+                    f"{store_name} has no sales history yet. "
+                    f"Upload your historical sales data via Settings → Upload Excel "
+                    f"to enable AI-driven demand forecasting, seasonal insights, "
+                    f"festival alerts, and stockout loss estimates."
+                ),
+                "store": store_name,
+                "category": "",
+                "timeline": "Upload data to unlock insights",
+            }]
+
+        recs = []
+
+        # 1. Seasonal recommendations (based on actual sales history)
         patterns = self.seasonal_patterns()
         for cat, data in patterns.items():
             for mo, rev in data["spike_months"].items():
@@ -284,7 +351,7 @@ class AIEngine:
                         "timeline": _month_name(mo),
                     })
 
-        # 2. Stockout losses
+        # 2. Stockout losses (requires sales history — already guarded above)
         for loss in self.stockout_losses():
             recs.append({
                 "type": "loss",
@@ -301,7 +368,7 @@ class AIEngine:
                 "timeline": "Immediate",
             })
 
-        # 3. Overstock alerts
+        # 3. Overstock alerts (inventory-based, but only surfaced with history)
         for alert in self.overstock_alerts():
             msg = (
                 f"'{alert['product']}' is overstocked at {store_name} "
@@ -320,7 +387,7 @@ class AIEngine:
                 "timeline": "This week",
             })
 
-        # 4. Festival opportunities
+        # 4. Festival opportunities (filtered to store's own categories)
         for opp in self.festival_opportunities():
             recs.append({
                 "type": "opportunity",
@@ -337,7 +404,7 @@ class AIEngine:
                 "timeline": opp["date"],
             })
 
-        # 5. Weather-based
+        # 5. Weather-based (filtered to store's own categories)
         weather = self.weather_impact_summary()
         condition = weather["dominant_condition"]
         for cat, factor in weather["impacts"].items():
@@ -368,7 +435,7 @@ class AIEngine:
                     "timeline": "Next 2 weeks",
                 })
 
-        # 6. Store-type specific
+        # 6. Store-type specific (only for known store types with history)
         if store_type == "automotive":
             if current_month in (9, 10, 11):
                 recs.append({

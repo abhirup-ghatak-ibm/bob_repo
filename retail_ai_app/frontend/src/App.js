@@ -4,9 +4,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import DashboardPage  from './pages/DashboardPage';
 import InventoryPage  from './pages/InventoryPage';
-import InsightsPage   from './pages/InsightsPage';
 import AllRecsPage    from './pages/AllRecsPage';
 import SettingsPage   from './pages/SettingsPage';
+import ContactPage    from './pages/ContactPage';
 import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { Spinner } from './components/UI';
 import './index.css';
@@ -32,9 +32,9 @@ function AppRoutes() {
       <Routes>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/insights"  element={<InsightsPage />} />
         <Route path="/all-recs"  element={<AllRecsPage />} />
         <Route path="/settings"  element={<SettingsPage />} />
+        <Route path="/contact"   element={<ContactPage />} />
         <Route path="*"          element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </div>

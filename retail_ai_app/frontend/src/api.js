@@ -20,9 +20,10 @@ export const getStores  = () => API.get('/stores');
 export const addStore   = (data) => API.post('/stores', data);
 
 // Products
-export const getProducts  = (storeId) => API.get(`/stores/${storeId}/products`);
-export const addProduct   = (storeId, data) => API.post(`/stores/${storeId}/products`, data);
+export const getProducts   = (storeId) => API.get(`/stores/${storeId}/products`);
+export const addProduct    = (storeId, data) => API.post(`/stores/${storeId}/products`, data);
 export const updateProduct = (storeId, productId, data) => API.put(`/stores/${storeId}/products/${productId}`, data);
+export const deleteProduct = (storeId, productId) => API.delete(`/stores/${storeId}/products/${productId}`);
 
 // Excel upload
 export const downloadTemplate = (storeId) =>

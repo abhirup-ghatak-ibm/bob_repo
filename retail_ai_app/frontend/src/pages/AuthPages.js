@@ -2,7 +2,36 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { register } from '../api';
-import { addStore as apiAddStore } from '../api';
+
+// ── Password policy ──────────────────────────────────────────────────────────
+// Min 8 chars, ≥1 uppercase, ≥1 lowercase, ≥1 digit, ≥1 special character
+
+function validatePassword(pw) {
+  if (pw.length < 8)              return 'Password must be at least 8 characters.';
+  if (!/[A-Z]/.test(pw))          return 'Password must contain at least one uppercase letter.';
+  if (!/[a-z]/.test(pw))          return 'Password must contain at least one lowercase letter.';
+  if (!/[0-9]/.test(pw))          return 'Password must contain at least one number.';
+  if (!/[^A-Za-z0-9]/.test(pw))   return 'Password must contain at least one special character (e.g. @, #, !, $).';
+  return null;
+}
+
+// ── Shared RetailAI logo block ───────────────────────────────────────────────
+
+function AuthLogo() {
+  return (
+    <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '22px', fontWeight: 700, letterSpacing: '0.3px',
+        color: '#1e293b',
+      }}>
+        Retail<span style={{ color: '#3b82d4' }}>AI</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Login Page ───────────────────────────────────────────────────────────────
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -28,8 +57,11 @@ export function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <div className="auth-title">RetailAI</div>
-        <div className="auth-sub">Multi-store retail intelligence platform</div>
+        <AuthLogo />
+        <div className="auth-title" style={{ textAlign: 'center' }}>Sign In</div>
+        <div className="auth-sub" style={{ textAlign: 'center' }}>
+          Multi-store retail intelligence platform
+        </div>
 
         {error && <div className="error-msg">{error}</div>}
 
@@ -60,12 +92,15 @@ export function LoginPage() {
 }
 
 
+// ── Register Page ────────────────────────────────────────────────────────────
+
 export function RegisterPage() {
-  const { login } = useAuth();
+  const { touchRefresh } = useAuth();
   const navigate = useNavigate();
   const [name,     setName]     = useState('');
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
+  const [pwError,  setPwError]  = useState('');
   const [stores,   setStores]   = useState([{ name: '', store_type: 'general', custom_type: '' }]);
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
@@ -87,9 +122,23 @@ export function RegisterPage() {
     return s.store_type;
   };
 
+  const handlePasswordChange = (v) => {
+    setPassword(v);
+    setPwError(validatePassword(v) || '');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(''); setLoading(true);
+
+    // Client-side password policy check
+    const pwErr = validatePassword(password);
+    if (pwErr) {
+      setPwError(pwErr);
+      setLoading(false);
+      return;
+    }
+
     const otherWithoutType = stores.find(s => s.store_type === 'other' && !s.custom_type.trim());
     if (otherWithoutType) {
       setError('Please specify the type for all stores marked "Other".');
@@ -110,6 +159,7 @@ export function RegisterPage() {
       localStorage.setItem('stores', JSON.stringify(res.data.stores));
       const active = res.data.stores[0] || null;
       localStorage.setItem('activeStore', JSON.stringify(active));
+      touchRefresh();
       navigate('/dashboard');
       window.location.reload(); // refresh auth state
     } catch (err) {
@@ -122,8 +172,9 @@ export function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="auth-card" style={{maxWidth:'480px'}}>
-        <div className="auth-title">Create Account</div>
-        <div className="auth-sub">Register as a store owner</div>
+        <AuthLogo />
+        <div className="auth-title" style={{ textAlign: 'center' }}>Create Account</div>
+        <div className="auth-sub" style={{ textAlign: 'center' }}>Register as a store owner</div>
 
         {error && <div className="error-msg">{error}</div>}
 
@@ -141,7 +192,20 @@ export function RegisterPage() {
           <div className="form-group">
             <label className="form-label">Password</label>
             <input className="form-input" type="password" value={password}
-              onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required />
+              onChange={e => handlePasswordChange(e.target.value)}
+              placeholder="Min 8 chars, upper + lower + number + special"
+              required />
+            {/* Live password hint */}
+            {password.length === 0 ? (
+              <div style={{fontSize:'11px', color:'var(--muted)', marginTop:'4px', lineHeight:'1.5'}}>
+                Must be ≥8 characters with at least one uppercase, one lowercase,
+                one number, and one special character (e.g. @, #, !, $).
+              </div>
+            ) : pwError ? (
+              <div style={{fontSize:'11px', color:'var(--critical)', marginTop:'4px'}}>{pwError}</div>
+            ) : (
+              <div style={{fontSize:'11px', color:'var(--success)', marginTop:'4px'}}>✓ Password looks good</div>
+            )}
           </div>
 
           <div style={{marginBottom:'12px'}}>
@@ -180,7 +244,7 @@ export function RegisterPage() {
             </button>
           </div>
 
-          <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
+          <button className="btn btn-primary btn-full" type="submit" disabled={loading || !!pwError}>
             {loading ? 'Creating account…' : 'Register'}
           </button>
         </form>

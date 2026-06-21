@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { getInventory, updateProduct } from '../api';
 import { Spinner, StoreTypeBadge, ProgressBar } from '../components/UI';
 
+
 const STATUS_LABELS = {
   stockout:  'STOCKOUT',
   low:       'LOW STOCK',
@@ -115,7 +116,7 @@ function QtyAdjuster({ item, onChanged }) {
 }
 
 export default function InventoryPage() {
-  const { activeStore } = useAuth();
+  const { activeStore, touchRefresh } = useAuth();
   const [inventory, setInventory] = useState([]);
   const [filter,    setFilter]    = useState('all');
   const [search,    setSearch]    = useState('');
@@ -147,6 +148,7 @@ export default function InventoryPage() {
     }));
     setToast('Stock updated — AI recommendations will reflect the new levels.');
     setTimeout(() => setToast(''), 3500);
+    touchRefresh();
   }, []);
 
   if (!activeStore) return (

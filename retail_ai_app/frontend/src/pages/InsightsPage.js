@@ -27,7 +27,7 @@ export default function InsightsPage() {
 
   if (!activeStore) return (
     <div className="main-content">
-      <div className="page-header"><div className="page-title">AI Insights</div></div>
+      <div className="page-header"><div className="page-title">Store Insights(AI)</div></div>
     </div>
   );
 
@@ -54,7 +54,7 @@ export default function InsightsPage() {
     <div className="main-content">
       <div className="page-header">
         <div className="flex items-center gap-8">
-          <div className="page-title">AI Insights</div>
+          <div className="page-title">Store Insights(AI)</div>
           <StoreTypeBadge type={activeStore.store_type} />
         </div>
         <div className="page-subtitle">

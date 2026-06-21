@@ -61,7 +61,7 @@ export default function AllRecsPage() {
   return (
     <div className="main-content">
       <div className="page-header">
-        <div className="page-title">All Recommendations</div>
+        <div className="page-title">AI Insights</div>
         <div className="page-subtitle">
           {owner?.name} — combined AI insights across all your stores
         </div>
