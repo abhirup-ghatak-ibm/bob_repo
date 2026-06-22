@@ -236,8 +236,10 @@ def dashboard(store_id):
     if not _owner_owns_store(owner_id, store_id):
         return jsonify({"error": "Forbidden"}), 403
     engine = AIEngine(store_id)
-    summary = engine.dashboard_summary()
-    engine.close()
+    try:
+        summary = engine.dashboard_summary()
+    finally:
+        engine.close()
     return jsonify(summary)
 
 
@@ -253,8 +255,10 @@ def inventory(store_id):
     if not _owner_owns_store(owner_id, store_id):
         return jsonify({"error": "Forbidden"}), 403
     engine = AIEngine(store_id)
-    inv = engine.inventory_status()
-    engine.close()
+    try:
+        inv = engine.inventory_status()
+    finally:
+        engine.close()
     return jsonify(inv)
 
 
@@ -270,8 +274,10 @@ def insights(store_id):
     if not _owner_owns_store(owner_id, store_id):
         return jsonify({"error": "Forbidden"}), 403
     engine = AIEngine(store_id)
-    recs = engine.generate_recommendations()
-    engine.close()
+    try:
+        recs = engine.generate_recommendations()
+    finally:
+        engine.close()
     return jsonify(recs)
 
 
@@ -289,13 +295,15 @@ def all_recommendations():
     all_recs = []
     for store in stores:
         engine = AIEngine(store["id"])
-        recs   = engine.generate_recommendations()
+        try:
+            recs = engine.generate_recommendations()
+        finally:
+            engine.close()
         for r in recs:
             r["store_id"]   = store["id"]
             r["store_name"] = store["name"]
             r["store_type"] = store["store_type"]
         all_recs.extend(recs)
-        engine.close()
     # Sort combined: critical first
     priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     all_recs.sort(key=lambda x: priority_order.get(x.get("priority", "low"), 3))
@@ -314,8 +322,10 @@ def sales_monthly(store_id):
     if not _owner_owns_store(owner_id, store_id):
         return jsonify({"error": "Forbidden"}), 403
     engine = AIEngine(store_id)
-    data   = engine.monthly_sales()
-    engine.close()
+    try:
+        data = engine.monthly_sales()
+    finally:
+        engine.close()
     return jsonify(data)
 
 
@@ -327,8 +337,10 @@ def sales_category(store_id):
     if not _owner_owns_store(owner_id, store_id):
         return jsonify({"error": "Forbidden"}), 403
     engine = AIEngine(store_id)
-    data   = engine.category_sales()
-    engine.close()
+    try:
+        data = engine.category_sales()
+    finally:
+        engine.close()
     return jsonify(data)
 
 
@@ -340,8 +352,10 @@ def stockout_losses(store_id):
     if not _owner_owns_store(owner_id, store_id):
         return jsonify({"error": "Forbidden"}), 403
     engine = AIEngine(store_id)
-    data   = engine.stockout_losses()
-    engine.close()
+    try:
+        data = engine.stockout_losses()
+    finally:
+        engine.close()
     return jsonify(data)
 
 
@@ -533,6 +547,7 @@ def delete_product(store_id, product_id):
         db.close()
         return jsonify({"error": "Product not found"}), 404
 
+    db.execute("DELETE FROM order_items WHERE product_id=?", (product_id,))
     db.execute("DELETE FROM inventory WHERE product_id=? AND store_id=?", (product_id, store_id))
     db.execute("DELETE FROM products WHERE id=? AND store_id=?", (product_id, store_id))
     db.commit()

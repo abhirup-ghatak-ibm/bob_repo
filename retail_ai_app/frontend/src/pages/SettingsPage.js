@@ -6,16 +6,18 @@ import { Spinner, StoreTypeBadge } from '../components/UI';
 const STORE_TYPE_ICONS = { general: '🏪', electronics: '💻', automotive: '🚗' };
 
 // ── Per-store-type placeholder suggestions for Product Name ─────────────────
+// Only provide suggestions that are clearly relevant to the store type.
+// For unknown/custom store types, leave blank to avoid misleading suggestions.
 const PRODUCT_NAME_PLACEHOLDERS = {
-  general:     'e.g. Cold Beverages',
+  general:     'e.g. Rice 5kg Bag',
   electronics: 'e.g. Smartphone 128GB',
   automotive:  'e.g. Car Tires (205/55 R16)',
 };
 
 const CATEGORY_PLACEHOLDERS = {
-  general:     'e.g. beverages',
+  general:     'e.g. grocery',
   electronics: 'e.g. smartphones',
-  automotive:  'e.g. tires',
+  automotive:  'e.g. tyres',
 };
 
 // ── Small reusable modal backdrop ──────────────────────────────────────────
@@ -350,6 +352,7 @@ export default function SettingsPage() {
     } finally {
       setProdLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStore?.id]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);

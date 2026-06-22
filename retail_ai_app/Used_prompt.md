@@ -49,6 +49,39 @@ The application should simulate multiple stores, including:
 
 ---
 
+## 🛠️ TECHNOLOGY STACK & VERSIONS
+
+### Backend
+All backend components run as a local Python process. No external servers are required.
+
+| Component | Technology | Version Used |
+|---|---|---|
+| Language | Python | 3.14.x (minimum: 3.9+) |
+| Web Framework | Flask | 3.1.3 |
+| CORS Middleware | Flask-CORS | 6.0.5 |
+| Database | SQLite (embedded) | Python `sqlite3` stdlib — no separate install needed |
+| Excel Processing | openpyxl | 3.1.5 |
+| Password Hashing | SHA-256 | Python `hashlib` stdlib |
+| Auth Tokens | UUID-based in-memory store | custom (`modules/auth.py`) |
+| AI / Analytics | Rule-based + statistical engine | custom (`modules/ai_engine.py`) — no ML libraries |
+
+### Frontend
+All frontend components run in the browser via a local development server. No deployment is needed for demo use.
+
+| Component | Technology | Version Used |
+|---|---|---|
+| Language | JavaScript (ES2022+) | — |
+| UI Framework | React | 19.2.7 |
+| Router | React Router DOM | 7.18.0 |
+| Charts | Chart.js | 4.5.1 |
+| Chart React Wrapper | react-chartjs-2 | 5.3.1 |
+| HTTP Client | Axios | 1.18.0 |
+| Build Toolchain | Create React App (react-scripts) | 5.0.1 |
+| Runtime | Node.js | 24.x (minimum: 18+) |
+| Package Manager | npm | 11.x (minimum: 9+) |
+
+---
+
 ## 🔐 AUTHENTICATION & USER MANAGEMENT
 
 ### Login / Logout
@@ -359,3 +392,35 @@ Provide:
 - Lightweight but realistic
 - Strong data isolation per store
 - Save this prompt in a file called "Used_prompt" inside the app
+
+---
+
+## 📘 PROJECT DOCUMENTATION FILES
+
+The following documentation files must be maintained alongside the codebase:
+
+### IMPLEMENTATION_GUIDE.md
+- A comprehensive manual document (`retail_ai_app/IMPLEMENTATION_GUIDE.md`) must be created and maintained
+- It must cover the full manual step-by-step implementation process including:
+  - Technology stack with exact versions (backend and frontend separately)
+  - Prerequisites and installation instructions for Python, Node.js, npm, and Git
+  - Complete folder structure with description of every file
+  - Backend setup: virtual environment, pip install, seed_data.py, starting Flask
+  - Frontend setup: npm install, npm start
+  - How to run both servers simultaneously
+  - How authentication works (token flow, password policy, in-memory sessions)
+  - How the AI engine works (guard logic, insight categories, category filtering)
+  - Excel upload feature details (template, upload handler, sports demo file)
+  - How to add new owners and stores via the UI
+  - How to reset the database
+  - How to build for production
+  - Common errors and their fixes
+  - File-by-file code reference for all backend and frontend files
+
+### README.md
+- The README must include a **"Download from GitHub & Run"** section with:
+  - `git clone <giturl>/<repository>.git` command (placeholders for actual URL and repo name)
+  - Step-by-step instructions: clone → pip install → seed DB → start backend → npm install → npm start
+  - Demo credentials table
+  - Reference link to `IMPLEMENTATION_GUIDE.md` for full setup details
+- The existing Quick Start section is retained for users who already have the repo locally

@@ -24,7 +24,60 @@ Runs entirely **offline on a single machine** — no cloud, no external APIs.
 
 ---
 
-## ⚡ Quick Start
+## ⬇️ Download from GitHub & Run
+
+### Step 1 — Clone the repository
+
+```bash
+git clone https://github.com/abhirup-ghatak-ibm/bob_repo.git
+cd bob_repo
+```
+
+### Step 2 — Install Python dependencies
+
+```bash
+cd retail_ai_app/backend
+pip install -r requirements.txt
+```
+
+### Step 3 — Seed the database
+
+```bash
+python seed_data.py
+```
+
+> This creates the SQLite database and populates it with demo data (owners, stores, ~41,000+ orders). Run **once only**.
+
+### Step 4 — Start the backend (Terminal 1)
+
+```bash
+python app.py
+```
+
+Backend runs at: **http://localhost:5000**
+
+### Step 5 — Install frontend dependencies & start (Terminal 2)
+
+```bash
+cd ../../retail_ai_app/frontend
+npm install
+npm start
+```
+
+App opens at: **http://localhost:3000**
+
+### Step 6 — Log in with demo credentials
+
+| Owner | Email | Password |
+|---|---|---|
+| Mr. A. Sharma | sharma@abc.com | sharma123 |
+| Mrs. S. Mukherjee | mukherjee@xyz.com | mukh123 |
+
+> For a full setup walkthrough, refer to **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)**.
+
+---
+
+## ⚡ Quick Start (if already cloned)
 
 ### Prerequisites
 - Python 3.9+ (`python --version`)

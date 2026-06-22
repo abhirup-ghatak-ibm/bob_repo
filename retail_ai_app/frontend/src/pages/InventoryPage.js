@@ -135,6 +135,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStore?.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -149,6 +150,7 @@ export default function InventoryPage() {
     setToast('Stock updated — AI recommendations will reflect the new levels.');
     setTimeout(() => setToast(''), 3500);
     touchRefresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!activeStore) return (

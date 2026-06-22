@@ -2,10 +2,16 @@
 AI/Analytics Engine - Local rule-based + statistical demand forecasting.
 No external APIs. Generates store-specific insights and recommendations.
 
-IMPORTANT: For stores with no sales history, no AI insights are generated.
-Insights are produced only when the store has actual sales data (from seed or
-uploaded Excel). Products alone (without orders) are not sufficient to trigger
-recommendations — the engine reads both products and order history.
+IMPORTANT:
+- For stores with no sales history, no AI insights are generated.
+  Insights are produced only when the store has actual sales data (from seed or
+  uploaded Excel). Products alone (without orders) are not sufficient to trigger
+  recommendations — the engine reads both products and order history.
+- Seasonal insights only surface for UPCOMING months (current or future within
+  the next 2 months), never for past months.
+- Festival opportunities are shown for ALL stores for upcoming festivals,
+  regardless of whether the impacted category exactly matches stored products.
+  The "all" multiplier is used for stores whose type is not specifically mapped.
 """
 import sqlite3
 from datetime import datetime, date, timedelta
@@ -27,6 +33,17 @@ def _season(month: int) -> str:
     if month in (6, 7, 8):   return "summer"
     if month in (9, 10, 11): return "autumn"
     return "winter"
+
+
+def _months_ahead(spike_month: int, current_month: int) -> int:
+    """
+    Return how many calendar months ahead spike_month is from current_month.
+    Positive = in the future, negative = already past this year.
+    Handles year wrap: e.g. current=11, spike=1 → 2 months ahead.
+    """
+    diff = (spike_month - current_month) % 12
+    # diff==0 means same month; treat months 1-2 ahead as upcoming
+    return diff
 
 
 FESTIVAL_IMPACT = {
@@ -211,8 +228,16 @@ class AIEngine:
     # ── Festival impact analysis ───────────────────────────────────────────
 
     def festival_opportunities(self):
-        """Festival insights are only shown when the store has sales history
-        AND the impacted category matches a category the store actually sells.
+        """Return upcoming festival opportunities for this store (next 120 days).
+
+        Rules:
+        - Always shown for stores WITH sales history.
+        - Uses store_type-specific multiplier if available; falls back to 'all'.
+        - The category-match filter is intentionally relaxed: if the festival
+          has impact_category = 'all' or the store has no strict category match,
+          we still surface the festival using the 'all' multiplier — every store
+          can benefit from increased footfall during major festivals.
+        - Only excluded if the multiplier (including 'all' fallback) is ≤ 1.1.
         """
         if not self._has_sales_history():
             return []
@@ -222,25 +247,44 @@ class AIEngine:
             SELECT festival_name, festival_date, impact_category, demand_multiplier
             FROM festival_calendar
             WHERE festival_date >= date('now')
-              AND festival_date <= date('now', '+90 days')
+              AND festival_date <= date('now', '+120 days')
             ORDER BY festival_date
         """).fetchall()
         opps = []
+        seen_festivals = set()
         for f in upcoming:
-            impact_map = FESTIVAL_IMPACT.get(f["festival_name"], {})
+            fname = f["festival_name"]
+            if fname in seen_festivals:
+                continue  # deduplicate same festival appearing multiple times
+            impact_map = FESTIVAL_IMPACT.get(fname, {})
+            # Prefer store-type-specific multiplier, fall back to 'all'
             multiplier = impact_map.get(store_type, impact_map.get("all", 1.0))
             if multiplier <= 1.1:
-                continue
-            # Only surface the festival insight if the impacted category
-            # exists among the store's own product categories
+                continue  # negligible impact — skip
+
             impact_cat = (f["impact_category"] or "").lower()
-            if impact_cat and impact_cat not in store_categories:
-                continue
+
+            # Determine the best category label to show in the insight message:
+            # If the store sells products in the impacted category → use it.
+            # Otherwise fall back to a friendly description based on store type.
+            if impact_cat and impact_cat in store_categories:
+                display_cat = impact_cat
+            elif impact_cat == "all":
+                display_cat = "all product"
+            else:
+                # Map store type to a sensible fallback display label
+                display_cat = {
+                    "general":     "general merchandise",
+                    "electronics": "electronics",
+                    "automotive":  "vehicles & accessories",
+                }.get(store_type, "product")
+
+            seen_festivals.add(fname)
             opps.append({
-                "festival": f["festival_name"],
-                "date": f["festival_date"],
-                "multiplier": multiplier,
-                "impact_category": f["impact_category"],
+                "festival":        fname,
+                "date":            f["festival_date"],
+                "multiplier":      multiplier,
+                "impact_category": display_cat,
             })
         return opps
 
@@ -296,7 +340,6 @@ class AIEngine:
         store_type = self._store_type()
         today = date.today()
         current_month = today.month
-        season = _season(current_month)
 
         # ── Guard: no sales history → no insights ────────────────────────
         if not self._has_sales_history():
@@ -317,27 +360,40 @@ class AIEngine:
 
         recs = []
 
-        # 1. Seasonal recommendations (based on actual sales history)
+        # 1. Seasonal recommendations — UPCOMING months only (never past)
+        #    A spike month is "upcoming" if it is the current month (0 months ahead)
+        #    or within the next 2 calendar months. Past months are excluded.
         patterns = self.seasonal_patterns()
         for cat, data in patterns.items():
             for mo, rev in data["spike_months"].items():
-                if abs(mo - current_month) <= 2:
+                months_ahead = _months_ahead(mo, current_month)
+                # 0 = current month, 1 = next month, 2 = month after → show
+                # 3–11 = further in future or past → skip
+                if months_ahead <= 2:
+                    if months_ahead == 0:
+                        time_label = f"{_month_name(mo)} (this month)"
+                    else:
+                        time_label = f"{_month_name(mo)} (in {months_ahead} month{'s' if months_ahead > 1 else ''})"
                     recs.append({
                         "type": "opportunity",
                         "priority": "high",
                         "title": f"Seasonal Demand Spike — {cat.title()}",
                         "message": (
                             f"Historical data shows {cat} sales in {store_name} spike "
-                            f"~{round((rev/data['overall_avg']-1)*100)}% in {_month_name(mo)}. "
-                            f"Consider increasing stock now."
+                            f"~{round((rev/data['overall_avg']-1)*100)}% around {_month_name(mo)}. "
+                            f"Consider increasing stock now to capture the upcoming demand."
                         ),
                         "store": store_name,
                         "category": cat,
-                        "timeline": f"{_month_name(mo)} (upcoming)",
+                        "timeline": time_label,
                     })
 
             for mo, rev in data["slump_months"].items():
-                if abs(mo - current_month) <= 1:
+                months_ahead = _months_ahead(mo, current_month)
+                # Only surface slump warning for the current month or next month
+                if months_ahead <= 1:
+                    time_label = (f"{_month_name(mo)} (this month)"
+                                  if months_ahead == 0 else f"{_month_name(mo)} (next month)")
                     recs.append({
                         "type": "risk",
                         "priority": "medium",
@@ -348,7 +404,7 @@ class AIEngine:
                         ),
                         "store": store_name,
                         "category": cat,
-                        "timeline": _month_name(mo),
+                        "timeline": time_label,
                     })
 
         # 2. Stockout losses (requires sales history — already guarded above)
@@ -368,7 +424,7 @@ class AIEngine:
                 "timeline": "Immediate",
             })
 
-        # 3. Overstock alerts (inventory-based, but only surfaced with history)
+        # 3. Overstock alerts (inventory-based, only surfaced with history)
         for alert in self.overstock_alerts():
             msg = (
                 f"'{alert['product']}' is overstocked at {store_name} "
@@ -387,21 +443,26 @@ class AIEngine:
                 "timeline": "This week",
             })
 
-        # 4. Festival opportunities (filtered to store's own categories)
+        # 4. Festival opportunities — ALL stores get upcoming festival insights.
+        #    The festival_opportunities() method now uses 'all' multiplier as
+        #    fallback so every store sees relevant festival revenue opportunities.
         for opp in self.festival_opportunities():
+            days_away = (date.fromisoformat(opp["date"]) - today).days
+            urgency = "high" if days_away <= 45 else "medium"
             recs.append({
                 "type": "opportunity",
-                "priority": "high",
-                "title": f"Festival Demand — {opp['festival']}",
+                "priority": urgency,
+                "title": f"Festival Revenue Opportunity — {opp['festival']}",
                 "message": (
-                    f"{opp['festival']} is approaching ({opp['date']}). "
-                    f"Demand for {opp['impact_category']} products expected to be "
+                    f"{opp['festival']} is on {opp['date']} "
+                    f"({days_away} days away). "
+                    f"Demand for {opp['impact_category']} products is expected to be "
                     f"~{opp['multiplier']}x normal at {store_name}. "
-                    f"Pre-stock inventory now."
+                    f"Pre-stock and prepare promotions now to maximise revenue."
                 ),
                 "store": store_name,
                 "category": opp["impact_category"],
-                "timeline": opp["date"],
+                "timeline": f"{opp['date']} ({days_away} days away)",
             })
 
         # 5. Weather-based (filtered to store's own categories)
@@ -435,30 +496,58 @@ class AIEngine:
                     "timeline": "Next 2 weeks",
                 })
 
-        # 6. Store-type specific (only for known store types with history)
+        # 6. Store-type specific upcoming-period insights
         if store_type == "automotive":
-            if current_month in (9, 10, 11):
+            if current_month in (7, 8, 9):   # warn 2–3 months before Q4 surge
                 recs.append({
                     "type": "opportunity",
                     "priority": "high",
-                    "title": "Festive Season Vehicle Demand Surge",
+                    "title": "Prepare for Festive Season Vehicle Demand Surge",
                     "message": (
-                        f"Q4 festive season historically drives 40–60% higher vehicle inquiries "
-                        f"at {store_name}. Ensure display inventory and financing options are ready."
+                        f"Q4 festive season (Oct–Dec) historically drives 40–60% higher vehicle "
+                        f"inquiries at {store_name}. Start building display inventory and "
+                        f"arranging financing options now."
+                    ),
+                    "store": store_name,
+                    "category": "vehicles",
+                    "timeline": "Oct–Dec (upcoming)",
+                })
+            elif current_month in (9, 10, 11):
+                recs.append({
+                    "type": "opportunity",
+                    "priority": "high",
+                    "title": "Festive Season Vehicle Demand Surge — Active Now",
+                    "message": (
+                        f"Q4 festive season is here. Vehicle inquiries at {store_name} "
+                        f"are expected 40–60% higher. Ensure display inventory and "
+                        f"financing options are fully ready."
                     ),
                     "store": store_name,
                     "category": "vehicles",
                     "timeline": "Oct–Dec",
                 })
         if store_type == "electronics":
-            if current_month in (10, 11, 12):
+            if current_month in (7, 8, 9):   # pre-season warning
                 recs.append({
                     "type": "opportunity",
                     "priority": "high",
-                    "title": "Electronics Festive Demand Cycle",
+                    "title": "Prepare for Electronics Festive Demand Cycle",
                     "message": (
                         f"Smartphones, TVs, and laptops see 2–3x demand spikes during Oct–Dec at "
-                        f"{store_name}. Stock up 6–8 weeks before Diwali/Christmas."
+                        f"{store_name}. Stock up 6–8 weeks before Diwali/Christmas — order now."
+                    ),
+                    "store": store_name,
+                    "category": "electronics",
+                    "timeline": "Oct–Dec (upcoming)",
+                })
+            elif current_month in (10, 11, 12):
+                recs.append({
+                    "type": "opportunity",
+                    "priority": "high",
+                    "title": "Electronics Festive Demand Cycle — Active Now",
+                    "message": (
+                        f"Smartphones, TVs, and laptops are seeing 2–3x demand spikes at "
+                        f"{store_name}. Ensure top SKUs are fully stocked."
                     ),
                     "store": store_name,
                     "category": "electronics",
